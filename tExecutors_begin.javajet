@@ -1,0 +1,127 @@
+<%@ jet 
+	imports="
+		org.talend.core.model.process.INode 
+		org.talend.core.model.process.ElementParameterParser 
+		org.talend.core.model.metadata.IMetadataTable 
+		org.talend.core.model.metadata.IMetadataColumn 
+		org.talend.core.model.process.IConnection
+		org.talend.core.model.process.IConnectionCategory
+		org.talend.designer.codegen.config.CodeGeneratorArgument
+		org.talend.core.model.metadata.types.JavaTypesManager
+		org.talend.core.model.metadata.types.JavaType
+		java.util.List 
+    	java.util.Map		
+	" 
+%>
+<%
+CodeGeneratorArgument codeGenArgument = (CodeGeneratorArgument) argument;
+INode node = (INode)codeGenArgument.getArgument();
+String cid = node.getUniqueName();
+
+String threadPoolType = ElementParameterParser.getValue(node, "__THREAD_POOL_TYPE__");
+String threadPoolSize = ElementParameterParser.getValue(node, "__THREAD_POOL_SIZE__");
+String scheduledType = ElementParameterParser.getValue(node, "__SCHEDULED_TYPE__");
+String timeUnit = ElementParameterParser.getValue(node, "__TIME_UNIT__");
+String initialDelay = ElementParameterParser.getValue(node, "__INITIAL_DELAY__");
+String delay = ElementParameterParser.getValue(node, "__DELAY__");
+String period = ElementParameterParser.getValue(node, "__PERIOD__");
+String timeoutUnit = ElementParameterParser.getValue(node, "__TIMEOUT_UNIT__");
+String timeout = ElementParameterParser.getValue(node, "__TIMEOUT__");
+
+if (timeout.equals("0")) 
+	timeout = Long.toString(Long.MAX_VALUE) + "L";
+
+if (threadPoolType.equals("FIXED")) { 
+%>
+java.util.concurrent.ExecutorService <%= cid %>_ExecutorService = java.util.concurrent.Executors.newFixedThreadPool(<%= threadPoolSize %>);
+<%
+} 
+else if (threadPoolType.equals("CACHED")) {
+%>
+java.util.concurrent.ExecutorService <%= cid %>_ExecutorService = java.util.concurrent.Executors.newCachedThreadPool();
+<%
+}
+else if (threadPoolType.equals("SCHEDULED")) {
+%>
+java.util.concurrent.ScheduledExecutorService <%= cid %>_ExecutorService = java.util.concurrent.Executors.newScheduledThreadPool(<%= threadPoolSize %>);
+<%
+}
+
+List<? extends IConnection> conns = node.getOutgoingConnections();
+for (IConnection conn : conns) {
+	if(conn.getLineStyle().getName().equals("PARALLELIZE")) {
+		if (threadPoolType.equals("FIXED") || threadPoolType.equals("CACHED")) { 
+%>
+<%= cid %>_ExecutorService.execute(new Runnable() { 
+	public void run() { 
+		try { 
+			<%= conn.getTarget().getUniqueName() %>Process(globalMap); 
+		}
+		catch(TalendException te) {
+			throw new RuntimeException(te);
+		} 
+	} 
+});
+<%
+		}
+		else {
+			if (scheduledType.equals("FIXED_RATE")) {
+%>
+<%= cid %>_ExecutorService.scheduleAtFixedRate(new Runnable() { 
+	public void run() { 
+		try { 
+			<%= conn.getTarget().getUniqueName() %>Process(globalMap); 
+		}
+		catch(TalendException te) {
+			throw new RuntimeException(te);
+		} 
+	} 
+}, <%= initialDelay %>, <%= period %>, java.util.concurrent.TimeUnit.<%= timeUnit %>);
+<%			
+			}
+			else if (scheduledType.equals("FIXED_DELAY")) {
+%>
+<%= cid %>_ExecutorService.scheduleWithFixedDelay(new Runnable() { 
+	public void run() { 
+		try { 
+			<%= conn.getTarget().getUniqueName() %>Process(globalMap); 
+		}
+		catch(TalendException te) {
+			throw new RuntimeException(te);
+		} 
+	} 
+}, <%= initialDelay %>, <%= delay %>, java.util.concurrent.TimeUnit.<%= timeUnit %>);
+<%
+			}
+			else {
+%>
+<%= cid %>_ExecutorService.schedule(new Runnable() { 
+	public void run() { 
+		try { 
+			<%= conn.getTarget().getUniqueName() %>Process(globalMap); 
+		}
+		catch(TalendException te) {
+			throw new RuntimeException(te);
+		} 
+	} 
+}, <%= delay %>, java.util.concurrent.TimeUnit.<%= timeUnit %>);
+<%				
+			}	
+		}
+	}
+}
+
+conns = node.getOutgoingConnections();
+for (IConnection conn : conns) {
+	if(conn.getLineStyle().getName().equals("SYNCHRONIZE")) {
+%>
+<%= cid %>_ExecutorService.shutdown();
+<%= cid %>_ExecutorService.awaitTermination(<%= timeout %>, java.util.concurrent.TimeUnit.<%= timeoutUnit %>);
+<%= conn.getTarget().getUniqueName() %>Process(globalMap);
+<%	
+	}
+}
+%>
+
+
+
