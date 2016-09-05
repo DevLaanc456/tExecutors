@@ -20,6 +20,7 @@ String cid = node.getUniqueName();
 
 String threadPoolType = ElementParameterParser.getValue(node, "__THREAD_POOL_TYPE__");
 String threadPoolSize = ElementParameterParser.getValue(node, "__THREAD_POOL_SIZE__");
+String parallelismLevel = ElementParameterParser.getValue(node, "__THREAD_PARALLELISM_LEVEL__");
 String scheduledType = ElementParameterParser.getValue(node, "__SCHEDULED_TYPE__");
 String timeUnit = ElementParameterParser.getValue(node, "__TIME_UNIT__");
 String initialDelay = ElementParameterParser.getValue(node, "__INITIAL_DELAY__");
@@ -28,8 +29,9 @@ String period = ElementParameterParser.getValue(node, "__PERIOD__");
 String timeoutUnit = ElementParameterParser.getValue(node, "__TIMEOUT_UNIT__");
 String timeout = ElementParameterParser.getValue(node, "__TIMEOUT__");
 
-if (timeout.equals("0")) 
+if (timeout.equals("0")) {
 	timeout = Long.toString(Long.MAX_VALUE) + "L";
+}
 
 if (threadPoolType.equals("FIXED")) { 
 %>
@@ -46,11 +48,23 @@ else if (threadPoolType.equals("SCHEDULED")) {
 java.util.concurrent.ScheduledExecutorService <%= cid %>_ExecutorService = java.util.concurrent.Executors.newScheduledThreadPool(<%= threadPoolSize %>);
 <%
 }
+else if (threadPoolType.equals("WORKSTEALING")) {
+	if (!parallelismLevel.equals("0")) {
+%>
+java.util.concurrent.ExecutorService <%= cid %>_ExecutorService = java.util.concurrent.Executors.newWorkStealingPool(<%= parallelismLevel %>);
+<%
+	}
+	else {
+%>
+java.util.concurrent.ExecutorService <%= cid %>_ExecutorService = java.util.concurrent.Executors.newWorkStealingPool();
+<%	
+	}
+}
 
 List<? extends IConnection> conns = node.getOutgoingConnections();
 for (IConnection conn : conns) {
 	if(conn.getLineStyle().getName().equals("PARALLELIZE")) {
-		if (threadPoolType.equals("FIXED") || threadPoolType.equals("CACHED")) { 
+		if (threadPoolType.equals("FIXED") || threadPoolType.equals("CACHED") || threadPoolType.equals("WORKSTEALING")) { 
 %>
 <%= cid %>_ExecutorService.execute(new Runnable() { 
 	public void run() { 
